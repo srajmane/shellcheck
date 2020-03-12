@@ -13,6 +13,8 @@ jobs:
     - env: BUILD=windows
     - env: BUILD=armv6hf
     - env: BUILD=aarch64
+    - env: BUILD=s390x
+      arch: s390x
     - env: BUILD=osx
       os: osx
 
