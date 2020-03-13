@@ -25,7 +25,7 @@ jobs:
         - set -ex; multi_arch_docker::main; set +x
 
 before_install: |
-  DOCKER_BASE="$DOCKER_USERNAME/shellcheck"
+  DOCKER_BASE="shellcheck"
   DOCKER_BUILDS=""
   export TAGS=""
   test "$TRAVIS_BRANCH" = master && TAGS="$TAGS latest" || true
