@@ -45,8 +45,8 @@ build_s390x() {
  sudo apt-get update
  sudo apt-get -y install ghc cabal-install
  cabal update
- cabal install --dependencies-only
- cabal build shellcheck
+ cabal install ShellCheck
+ #cabal build shellcheck
 
  path="$(find . -name 'shellcheck' -type f)"
   [[ -e "$path" ]]
