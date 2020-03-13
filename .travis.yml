@@ -34,7 +34,7 @@ before_install: |
 
 script:
   - mkdir -p deploy
-  - travis_wait source ./.compile_binaries
+  - source ./.compile_binaries
   - ./striptests
   - set -ex; build_"$BUILD"; set +x;
   - ./.prepare_deploy
