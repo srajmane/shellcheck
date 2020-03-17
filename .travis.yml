@@ -10,13 +10,8 @@ jobs:
 
       # This must weirdly not have a dash, otherwise an empty job is created
       env: BUILD=linux
-      #    - env: BUILD=windows
-      # - env: BUILD=armv6hf
-      #- env: BUILD=aarch64
-      #- env: BUILD=osx
-      #os: osx
-      - env: BUILD=s390x
-        arch: s390x
+    - env: BUILD=s390x
+      arch: s390x
 
     - stage: Deploy docker image
       if: branch = master
