@@ -75,7 +75,9 @@ build_s390x() {
   # Linux s390x static executable
   sudo apt-get update
   sudo apt-get -y install ghc cabal-install
+  cabal --version
   cabal update
+  cabal --version
   cabal install --dependencies-only
   cabal build shellcheck
  
