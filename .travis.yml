@@ -15,6 +15,7 @@ jobs:
     - env: BUILD=aarch64
     - env: BUILD=s390x
       arch: s390x
+      dist: eoan
     - env: BUILD=osx
       os: osx
 
