@@ -42,37 +42,18 @@ build_armv6hf() {
 
 build_s390x() {
   # Linux s390x static executable
- #sudo apt-get update
- #sudo apt-get -y install ghc cabal-install
- #cabal update
- #cabal install --dependencies-only
- #cabal build shellcheck
+ sudo apt-get update
+ sudo apt-get -y install ghc cabal-install
+ cabal update
+ cabal install --dependencies-only
+ cabal build shellcheck
 
- #path="$(find . -name 'shellcheck' -type f)"
- # [[ -e "$path" ]]
-  #for tag in $TAGS
-  #do 
-   # cp "$path" "deploy/shellcheck-$tag.linux-s390x"; 
-  #done
-  # Linux Docker image
-  name="$DOCKER_BASE"
-  DOCKER_BUILDS="$DOCKER_BUILDS $name"
-  docker build -t "$name:current" .
-  docker run "$name:current" --version
-  printf '%s\n' "#!/bin/sh" "echo 'hello world'" > myscript
-  docker run -v "$PWD:/mnt" "$name:current" myscript
-
-  # Copy static executable from docker image
-  id=$(docker create "$name:current")
-  docker cp "$id:/bin/shellcheck" "shellcheck"
-  docker rm "$id"
-  ls -l shellcheck
-  file shellcheck
-  ./shellcheck myscript
-  for tag in $TAGS
-  do 
-    cp "shellcheck" "deploy/shellcheck-$tag.linux-s390x"; 
-  done
+ path="$(find . -name 'shellcheck' -type f)"
+ [[ -e "$path" ]]
+ for tag in $TAGS
+ do 
+    cp "$path" "deploy/shellcheck-$tag.linux-s390x"; 
+ done
  }
   
 build_windows() {
