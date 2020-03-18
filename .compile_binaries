@@ -45,8 +45,10 @@ build_s390x() {
  sudo apt-get update
  sudo apt-get -y install ghc cabal-install
  cabal update
- cabal install --dependencies-only
- cabal build shellcheck
+ cabal install --dependencies-only --ghc-options="-optlo-Os -split-sections"
+ cabal build Paths_ShellCheck && \
+  ghc -optl-static -optl-pthread -isrc -idist/build/autogen --make shellcheck -split-sections -optc-Wl,--gc-sections -optlo-Os && \
+  strip --strip-all shellcheck
 
  path="$(find . -name 'shellcheck' -type f)"
  [[ -e "$path" ]]
