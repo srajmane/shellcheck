@@ -78,7 +78,7 @@ build_s390x() {
   cabal --version
   cabal update
   cabal --version
-  cabal install --dependencies-only --ghc-options="-optlo-Os"
+  cabal install --dependencies-only --ghc-options="-optlo-Os -split-objs"
   cabal build shellcheck
  
   path="$(find . -name 'shellcheck' -type f)"
