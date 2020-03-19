@@ -578,16 +578,30 @@ prop_checkForInQuoted4 = verify checkForInQuoted "for f in 1,2,3; do true; done"
 prop_checkForInQuoted4a = verifyNot checkForInQuoted "for f in foo{1,2,3}; do true; done"
 prop_checkForInQuoted5 = verify checkForInQuoted "for f in ls; do true; done"
 prop_checkForInQuoted6 = verifyNot checkForInQuoted "for f in \"${!arr}\"; do true; done"
+prop_checkForInQuoted7 = verify checkForInQuoted "for f in ls, grep, mv; do true; done"
+prop_checkForInQuoted8 = verify checkForInQuoted "for f in 'ls', 'grep', 'mv'; do true; done"
+prop_checkForInQuoted9 = verifyNot checkForInQuoted "for f in 'ls,' 'grep,' 'mv'; do true; done"
 checkForInQuoted _ (T_ForIn _ f [T_NormalWord _ [word@(T_DoubleQuoted id list)]] _)
     | any (\x -> willSplit x && not (mayBecomeMultipleArgs x)) list
             || (fmap wouldHaveBeenGlob (getLiteralString word) == Just True) =
         err id 2066 "Since you double quoted this, it will not word split, and the loop will only run once."
 checkForInQuoted _ (T_ForIn _ f [T_NormalWord _ [T_SingleQuoted id _]] _) =
     warn id 2041 "This is a literal string. To run as a command, use $(..) instead of '..' . "
-checkForInQuoted _ (T_ForIn _ f [T_NormalWord _ [T_Literal id s]] _) =
-    if ',' `elem` s && '{' `notElem` s
-      then warn id 2042 "Use spaces, not commas, to separate loop elements."
-      else warn id 2043 "This loop will only ever run once for a constant value. Did you perhaps mean to loop over dir/*, $var or $(cmd)?"
+checkForInQuoted _ (T_ForIn _ _ [single] _) | fromMaybe False $ fmap (',' `elem`) $ getUnquotedLiteral single =
+    warn (getId single) 2042 "Use spaces, not commas, to separate loop elements."
+checkForInQuoted _ (T_ForIn _ _ [single] _) | not (willSplit single) && not (mayBecomeMultipleArgs single) =
+    warn (getId single) 2043 "This loop will only ever run once. Bad quoting or missing glob/expansion?"
+checkForInQuoted params (T_ForIn _ _ multiple _) =
+    mapM_ f multiple
+  where
+    f arg = sequence_ $ do
+        suffix <- getTrailingUnquotedLiteral arg
+        string <- getLiteralString suffix
+        guard $ "," `isSuffixOf` string
+        return $
+            warnWithFix (getId arg) 2258
+                "The trailing comma is part of the value, not a separator. Delete or quote it."
+                (fixWith [replaceEnd (getId suffix) params 1 ""])
 checkForInQuoted _ _ = return ()
 
 prop_checkForInCat1 = verify checkForInCat "for f in $(cat foo); do stuff; done"
@@ -1011,8 +1025,9 @@ prop_checkUnquotedN2 = verify checkUnquotedN "[ -n $cow ]"
 prop_checkUnquotedN3 = verifyNot checkUnquotedN "[[ -n $foo ]] && echo cow"
 prop_checkUnquotedN4 = verify checkUnquotedN "[ -n $cow -o -t 1 ]"
 prop_checkUnquotedN5 = verifyNot checkUnquotedN "[ -n \"$@\" ]"
-checkUnquotedN _ (TC_Unary _ SingleBracket "-n" (T_NormalWord id [t])) | willSplit t =
-       err id 2070 "-n doesn't work with unquoted arguments. Quote or use [[ ]]."
+checkUnquotedN _ (TC_Unary _ SingleBracket "-n" t) | willSplit t =
+    unless (any isArrayExpansion $ getWordParts t) $ -- There's SC2198 for these
+       err (getId t) 2070 "-n doesn't work with unquoted arguments. Quote or use [[ ]]."
 checkUnquotedN _ _ = return ()
 
 prop_checkNumberComparisons1 = verify checkNumberComparisons "[[ $foo < 3 ]]"
@@ -2297,13 +2312,30 @@ prop_checkWhileReadPitfalls5 = verifyNot checkWhileReadPitfalls "while read foo;
 prop_checkWhileReadPitfalls6 = verifyNot checkWhileReadPitfalls "while read foo <&3; do ssh $foo; done 3< foo"
 prop_checkWhileReadPitfalls7 = verify checkWhileReadPitfalls "while read foo; do if true; then ssh $foo uptime; fi; done < file"
 prop_checkWhileReadPitfalls8 = verifyNot checkWhileReadPitfalls "while read foo; do ssh -n $foo uptime; done < file"
+prop_checkWhileReadPitfalls9 = verify checkWhileReadPitfalls "while read foo; do ffmpeg -i foo.mkv bar.mkv -an; done"
+prop_checkWhileReadPitfalls10 = verify checkWhileReadPitfalls "while read foo; do mplayer foo.ogv > file; done"
+prop_checkWhileReadPitfalls11 = verifyNot checkWhileReadPitfalls "while read foo; do mplayer foo.ogv <<< q; done"
+prop_checkWhileReadPitfalls12 = verifyNot checkWhileReadPitfalls "while read foo\ndo\nmplayer foo.ogv << EOF\nq\nEOF\ndone"
+prop_checkWhileReadPitfalls13 = verify checkWhileReadPitfalls "while read foo; do x=$(ssh host cmd); done"
+prop_checkWhileReadPitfalls14 = verify checkWhileReadPitfalls "while read foo; do echo $(ssh host cmd) < /dev/null; done"
 
-checkWhileReadPitfalls _ (T_WhileExpression id [command] contents)
+checkWhileReadPitfalls params (T_WhileExpression id [command] contents)
         | isStdinReadCommand command =
     mapM_ checkMuncher contents
   where
-    munchers = [ "ssh", "ffmpeg", "mplayer", "HandBrakeCLI" ]
-    preventionFlags = ["n", "noconsolecontrols" ]
+    -- Map of munching commands to a function that checks if the flags should exclude it
+    munchers = Map.fromList [
+        ("ssh", (hasFlag, addFlag, "-n")),
+        ("ffmpeg", (hasArgument, addFlag, "-nostdin")),
+        ("mplayer", (hasArgument, addFlag, "-noconsolecontrols")),
+        ("HandBrakeCLI", (\_ _ -> False, addRedirect, "< /dev/null"))
+        ]
+    -- Use flag parsing, e.g. "-an" -> "a", "n"
+    hasFlag ('-':flag) = elem flag . map snd . getAllFlags
+    -- Simple string match, e.g. "-an" -> "-an"
+    hasArgument arg = elem arg . mapMaybe getLiteralString . fromJust . getCommandArgv
+    addFlag string cmd = fixWith [replaceEnd (getId $ getCommandTokenOrThis cmd) params 0 (' ':string)]
+    addRedirect string cmd = fixWith [replaceEnd (getId cmd) params 0 (' ':string)]
 
     isStdinReadCommand (T_Pipeline _ _ [T_Redirecting id redirs cmd]) =
         let plaintext = oversimplify cmd
@@ -2312,28 +2344,47 @@ checkWhileReadPitfalls _ (T_WhileExpression id [command] contents)
             && all (not . stdinRedirect) redirs
     isStdinReadCommand _ = False
 
-    checkMuncher (T_Pipeline _ _ (T_Redirecting _ redirs cmd:_)) | not $ any stdinRedirect redirs =
-        case cmd of
-            (T_IfExpression _ thens elses) ->
-              mapM_ checkMuncher . concat $ map fst thens ++ map snd thens ++ [elses]
+    checkMuncher :: Token -> Writer [TokenComment] ()
+    checkMuncher (T_Pipeline _ _ (T_Redirecting _ redirs cmd:_)) = do
+        -- Check command substitutions regardless of the command
+        sequence_ $ do
+            (T_SimpleCommand _ vars args) <- Just cmd
+            let words = concat $ concatMap getCommandSequences $ concatMap getWords $ vars ++ args
+            return $ mapM_ checkMuncher words
 
-            _ -> sequence_ $ do
+        when (not $ any stdinRedirect redirs) $ do
+            -- Recurse into ifs/loops/groups/etc if this doesn't redirect
+            mapM_ checkMuncher $ concat $ getCommandSequences cmd
+
+            -- Check the actual command
+            sequence_ $ do
                 name <- getCommandBasename cmd
-                guard $ name `elem` munchers
+                (check, fix, flag) <- Map.lookup name munchers
+                guard $ not (check flag cmd)
 
-                -- Sloppily check if the command has a flag to prevent eating stdin.
-                let flags = getAllFlags cmd
-                guard . not $ any (`elem` preventionFlags) $ map snd flags
                 return $ do
                     info id 2095 $
                         name ++ " may swallow stdin, preventing this loop from working properly."
-                    warn (getId cmd) 2095 $
-                        "Add < /dev/null to prevent " ++ name ++ " from swallowing stdin."
+                    warnWithFix (getId cmd) 2095
+                        ("Use " ++ name ++ " " ++ flag ++ " to prevent " ++ name ++ " from swallowing stdin.")
+                        (fix flag cmd)
     checkMuncher _ = return ()
 
-    stdinRedirect (T_FdRedirect _ fd _)
-        | null fd || fd == "0" = True
+    stdinRedirect (T_FdRedirect _ fd op)
+        | fd == "0" = True
+        | fd == "" =
+            case op of
+                T_IoFile _ (T_Less _) _ -> True
+                T_IoDuplicate _ (T_LESSAND _) _ -> True
+                T_HereString _ _ -> True
+                T_HereDoc {} -> True
+                _ -> False
     stdinRedirect _ = False
+
+    getWords t =
+        case t of
+            T_Assignment _ _ _ _ x -> getWordParts x
+            _ -> getWordParts t
 checkWhileReadPitfalls _ _ = return ()
 
 
