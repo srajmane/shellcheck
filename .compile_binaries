@@ -78,7 +78,7 @@ build_s390x() {
   cabal --version
   cabal update
   cabal --version
-  cabal install --dependencies-only --ghc-options="-optlo-Os -j +RTS -A128m -n2m -RTS"
+  cabal install --dependencies-only --ghc-options="-optlo-Os -j +RTS -A512m -n2m -RTS" --disable-optimization 
   cabal build shellcheck
  
   path="$(find . -name 'shellcheck' -type f)"
