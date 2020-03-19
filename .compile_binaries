@@ -78,7 +78,7 @@ build_s390x() {
   cabal --version
   cabal update
   cabal --version
-  cabal install --dependencies-only --enable-optimization --disable-library-vanilla --enable-executable-dynamic
+  cabal install --dependencies-only --disable-library-vanilla --enable-executable-dynamic
   cabal build shellcheck
  
   path="$(find . -name 'shellcheck' -type f)"
